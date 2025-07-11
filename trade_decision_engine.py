@@ -81,7 +81,6 @@ def trade_decision_engine(
             is_fast = "fast" in zone_kind.lower()
             lot_size = LOT_SIZE
             
-            
             print(f"[DEBUG] Zone: {zone_price:.2f} | Fast: {is_fast} | Final Lot: {lot_size:.3f}")
 
             zone_type_label = zone_type.upper()
@@ -100,7 +99,6 @@ def trade_decision_engine(
             if touch_number:
                 send_telegram_message(f"⚠️ Price touched {zone_label} zone at {zone_price:.2f} (touch {touch_number})")
 
-                # Trend-following filter
                 if strategy_mode == "trend_follow":
                     if (zone_type == "demand" and trend != "uptrend") or (zone_type == "supply" and trend != "downtrend"):
                         msg = f"⛔️ Skipped: trend mismatch at {zone_label} zone {zone_price:.2f} (trend: {trend})"
@@ -111,21 +109,51 @@ def trade_decision_engine(
                 confirmed = False
                 reason = ""
 
-                if (zone_type == "demand" and is_bullish_pin_bar(candle.open, candle.high, candle.low, candle.close)) or \
-                   (zone_type == "supply" and is_bearish_pin_bar(candle.open, candle.high, candle.low, candle.close)):
-                    confirmed = True
-                    reason = "pin bar"
-                elif (zone_type == "demand" and is_bullish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close)) or \
-                     (zone_type == "supply" and is_bearish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close)):
-                    confirmed = True
-                    reason = "engulfing"
-                elif candle_confirms_breakout(trend, candle, zone_price):
-                    confirmed = True
-                    reason = "breakout"
+                if is_fast:
+                    body = abs(candle.close - candle.open)
+                    body_pct = (body / candle.open) * 100 if candle.open != 0 else 0
 
-                # Aggressive mode wick rejection
-                if not confirmed and strategy_mode == "aggressive" and has_wick_rejection(
-                    candle, direction="bullish" if zone_type == "demand" else "bearish"):
+                    valid_engulfing = (
+                        (zone_type == "demand" and is_bullish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close)) or
+                        (zone_type == "supply" and is_bearish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close))
+                    )
+                    valid_pin_bar = (
+                        (zone_type == "demand" and is_bullish_pin_bar(candle.open, candle.high, candle.low, candle.close)) or
+                        (zone_type == "supply" and is_bearish_pin_bar(candle.open, candle.high, candle.low, candle.close))
+                    )
+                    has_wick = has_wick_rejection(candle, direction="bullish" if zone_type == "demand" else "bearish")
+                    trend_ok = (zone_type == "demand" and trend == "uptrend") or (zone_type == "supply" and trend == "downtrend")
+
+                    if not (trend_ok and has_wick and (valid_engulfing or valid_pin_bar) and body_pct > 0.1):
+                        msg = f"⛔️ Skipped FAST zone {zone_price:.2f}: engulfing={valid_engulfing}, pin_bar={valid_pin_bar}, wick={has_wick}, trend_ok={trend_ok}, body={body_pct:.2f}%"
+                        print(msg)
+                        send_telegram_message(msg)
+                        continue
+
+                    confirmed = True
+                    confirmations = []
+                    if valid_engulfing:
+                        confirmations.append("engulfing")
+                    if valid_pin_bar:
+                        confirmations.append("pin bar")
+                    if has_wick:
+                        confirmations.append("wick")
+                    reason = f"fast zone ✔️ [{', '.join(confirmations)}]"
+
+                else:
+                    if (zone_type == "demand" and is_bullish_pin_bar(candle.open, candle.high, candle.low, candle.close)) or \
+                       (zone_type == "supply" and is_bearish_pin_bar(candle.open, candle.high, candle.low, candle.close)):
+                        confirmed = True
+                        reason = "pin bar"
+                    elif (zone_type == "demand" and is_bullish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close)) or \
+                         (zone_type == "supply" and is_bearish_engulfing(prev_candle.open, prev_candle.close, candle.open, candle.close)):
+                        confirmed = True
+                        reason = "engulfing"
+                    elif candle_confirms_breakout(trend, candle, zone_price):
+                        confirmed = True
+                        reason = "breakout"
+
+                if not confirmed and strategy_mode == "aggressive" and has_wick_rejection(candle, direction="bullish" if zone_type == "demand" else "bearish"):
                     confirmed = True
                     reason = "wick rejection"
 
@@ -151,7 +179,7 @@ def trade_decision_engine(
                 elif not confirmed:
                     send_telegram_message(f"⛔️ Skipped: no confirmation at {zone_label} zone {zone_price:.2f}")
 
-            # === False Breakout Reversal ===
+            # False Breakout Reversal
             reverse_side = "sell" if zone_type == "demand" else "buy"
             reverse_key = (reverse_side, zone_price)
             if detect_false_breakout(prev_candle, candle, zone_price, direction="bearish" if zone_type == "demand" else "bullish"):
@@ -174,7 +202,6 @@ def trade_decision_engine(
                         "lot": lot_size
                     })
 
-            # Reset after 4 touches
             if touch_number == 4:
                 send_telegram_message(f"⚠️ 4th touch at {zone_label} zone {zone_price:.2f} - possible breakout")
                 reset_touch_count(zone_price)
