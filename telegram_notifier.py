@@ -4,6 +4,7 @@ import requests
 
 from dotenv import load_dotenv
 import os
+load_dotenv()  # <-- Load .env first!
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 

@@ -12,6 +12,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 
+load_dotenv()  # <-- Load .env first!
+
 MT5_LOGIN = int(os.getenv("MT5_LOGIN"))
 MT5_PASSWORD = os.getenv("MT5_PASSWORD")
 MT5_SERVER = os.getenv("MT5_SERVER")
