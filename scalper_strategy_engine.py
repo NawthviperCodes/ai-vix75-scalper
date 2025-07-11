@@ -85,8 +85,16 @@ def check_for_closed_trades():
                 exit_price = exit_deal.price
                 profit = exit_deal.profit
                 result = "win" if profit > 0 else "loss"
-                sl = deal.sl
-                tp = deal.tp
+                positions = mt5.positions_get(position=deal.position_id)
+                if positions:
+                    position = positions[0]
+                    sl = position.sl
+                    tp = position.tp
+                else:
+                    sl = None
+                    tp = None
+                #sl = deal.sl
+                #tp = deal.tp
                 strategy_mode = "unknown"
                 seen.add((deal.position_id, exit_deal.time))
                 log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, result, strategy_mode, sl, tp, silent=True)
