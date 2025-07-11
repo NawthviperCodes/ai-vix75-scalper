@@ -1,4 +1,4 @@
-# === scalper_strategy_engine.py (Multi-Zone Trade Support + Reliable Cleanup) ===
+# === scalper_strategy_engine.py (Multi-Zone Trade Support + Reliable Cleanup + Trade Logging) ===
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -27,7 +27,6 @@ _last_fast_demand = []
 _last_fast_supply = []
 _last_zone_alert_time = None
 
-
 def zones_equal(z1, z2):
     if len(z1) != len(z2):
         return False
@@ -36,13 +35,11 @@ def zones_equal(z1, z2):
             return False
     return True
 
-
 def get_data(symbol, timeframe, bars):
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
     df = pd.DataFrame(rates)
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
-
 
 def calculate_h1_trend(h1_df):
     h1_df['SMA50'] = h1_df['close'].rolling(50).mean()
@@ -57,7 +54,6 @@ def calculate_h1_trend(h1_df):
     else:
         return "sideways"
 
-
 def print_detected_zones(demand_zones, supply_zones, fast_demand, fast_supply):
     print(f"[INFO] Strict Zones: {len(demand_zones)} demand, {len(supply_zones)} supply")
     for zone in demand_zones:
@@ -71,7 +67,6 @@ def print_detected_zones(demand_zones, supply_zones, fast_demand, fast_supply):
     for zone in fast_supply:
         print(f"  Fast Supply @ {zone['price']:.2f} at {zone['time']}")
 
-
 def check_for_closed_trades():
     deals = mt5.history_deals_get(datetime.now() - timedelta(days=1), datetime.now())
     if not deals:
@@ -79,7 +74,7 @@ def check_for_closed_trades():
 
     seen = set()
     for deal in deals:
-        if deal.entry != 1:  # Skip if not entry
+        if deal.entry != 1:
             continue
         for exit_deal in deals:
             if exit_deal.entry == 0 and exit_deal.position_id == deal.position_id and (deal.position_id, exit_deal.time) not in seen:
@@ -90,10 +85,12 @@ def check_for_closed_trades():
                 exit_price = exit_deal.price
                 profit = exit_deal.profit
                 result = "win" if profit > 0 else "loss"
+                sl = deal.sl
+                tp = deal.tp
+                strategy_mode = "unknown"
                 seen.add((deal.position_id, exit_deal.time))
-                log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, result, silent=True)
+                log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, result, strategy_mode, sl, tp, silent=True)
 
-                # === Clear matching (side, zone_price) entry from active_trades ===
                 point = mt5.symbol_info(SYMBOL).point
                 for key in list(active_trades.keys()):
                     s, z = key
@@ -101,7 +98,6 @@ def check_for_closed_trades():
                         del active_trades[key]
                         break
                 break
-
 
 def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
     global _last_demand_zones, _last_supply_zones, _last_fast_demand, _last_fast_supply, _last_zone_alert_time
@@ -143,8 +139,6 @@ def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
 
     price = tick.bid
     point = mt5.symbol_info(SYMBOL).point
-    
-    # ✅ DEBUG LOT SIZE COMING FROM GUI
     print(f"[DEBUG] Fixed Lot Used: {fixed_lot}")
 
     signals = trade_decision_engine(
