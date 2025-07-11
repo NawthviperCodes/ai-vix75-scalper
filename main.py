@@ -1,9 +1,8 @@
-# === main.py (Updated with Valid Lot Sizes) ===
 import MetaTrader5 as mt5
 import time
 import tkinter as tk
 from tkinter import messagebox
-from scalper_strategy_engine import monitor_and_trade, SYMBOL, TIMEFRAME_ENTRY
+from scalper_strategy_engine import monitor_and_trade, SYMBOL, TIMEFRAME_ENTRY, notify_strategy_change
 from emergency_control import check_emergency_stop
 from performance_tracker import init_log, send_daily_summary
 from symbol_info_helper import print_symbol_lot_info
@@ -39,6 +38,9 @@ def select_strategy_gui():
             messagebox.showerror("Error", "Invalid lot size selected.")
             return
 
+        # 🔔 Send initial strategy notification
+        notify_strategy_change(STRATEGY_MODE)
+
         window.destroy()
 
     window = tk.Tk()
@@ -50,7 +52,6 @@ def select_strategy_gui():
     tk.Radiobutton(window, text="Aggressive (Scalp Beast)", variable=mode_var, value="aggressive").pack(anchor="w", padx=20)
 
     tk.Label(window, text="Select Lot Size (VIX75):").pack(pady=(10, 0))
-    # Valid lot sizes based on step 0.001
     lot_options = [f"{x/1000:.3f}" for x in range(1, 21)]  # 0.001 to 0.020
     lot_var = tk.StringVar(window)
     lot_var.set(lot_options[0])

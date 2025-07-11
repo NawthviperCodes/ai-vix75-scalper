@@ -1,5 +1,3 @@
-# === scalper_strategy_engine.py (Multi-Zone Trade Support + Reliable Cleanup + Trade Logging) ===
-
 import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime, timedelta
@@ -9,6 +7,13 @@ from telegram_notifier import send_telegram_message
 from trade_executor import place_order, trail_sl
 from performance_tracker import log_trade
 import pytz
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+AUTO_SWITCH_ENABLED = os.getenv("AUTO_SWITCH_ENABLED", "False").lower() == "true"
+MANUAL_OVERRIDE = os.getenv("MANUAL_OVERRIDE", "False").lower() == "true"
+ATR_THRESHOLD_FACTOR = float(os.getenv("ATR_THRESHOLD_FACTOR", "0.8"))
 
 SYMBOL = "Volatility 75 Index"
 TIMEFRAME_ZONE = mt5.TIMEFRAME_H1
@@ -19,21 +24,31 @@ TP_RATIO = 2
 MAGIC = 77775
 CHECK_RANGE = 30000
 
-active_trades = {}  # key = (side, zone_price)
+active_trades = {}
 zone_touch_counts = {}
 _last_demand_zones = []
 _last_supply_zones = []
 _last_fast_demand = []
 _last_fast_supply = []
 _last_zone_alert_time = None
+_current_mode = None
+_last_switch_time = None
 
-def zones_equal(z1, z2):
-    if len(z1) != len(z2):
-        return False
-    for a, b in zip(z1, z2):
-        if abs(a['price'] - b['price']) > 1e-5 or a['time'] != b['time']:
-            return False
-    return True
+def notify_strategy_change(mode):
+    global _current_mode
+    if mode == _current_mode:
+        return  # Avoid duplicate alerts
+    _current_mode = mode
+    if mode == "trend_follow":
+        send_telegram_message(
+            "📢 Switched to Trend-Follow mode (Safe).\n"
+            "✅ This strategy waits for price to align with the overall trend and confirms with strict supply/demand zones. Designed for trending markets."
+        )
+    elif mode == "aggressive":
+        send_telegram_message(
+            "📢 Switched to Aggressive mode (Scalp Beast).\n"
+            "⚡️ This strategy targets fast reactions in consolidating or ranging markets. It uses fast zones and wick rejections for high-risk, high-reward scalping."
+        )
 
 def get_data(symbol, timeframe, bars):
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
@@ -41,18 +56,37 @@ def get_data(symbol, timeframe, bars):
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
 
-def calculate_h1_trend(h1_df):
-    h1_df['SMA50'] = h1_df['close'].rolling(50).mean()
-    if len(h1_df) < 51:
-        return None
-    last = h1_df['close'].iloc[-1]
-    sma = h1_df['SMA50'].iloc[-1]
+def calculate_trend(df):
+    df['SMA50'] = df['close'].rolling(50).mean()
+    df['ATR14'] = df['high'].rolling(14).max() - df['low'].rolling(14).min()
+    if len(df) < 51:
+        return None, None
+    last = df['close'].iloc[-1]
+    sma = df['SMA50'].iloc[-1]
+    atr = df['ATR14'].iloc[-1]
     if last > sma:
-        return "uptrend"
+        return "uptrend", atr
     elif last < sma:
-        return "downtrend"
+        return "downtrend", atr
     else:
-        return "sideways"
+        return "sideways", atr
+
+def determine_combined_trend():
+    h1_df = get_data(SYMBOL, mt5.TIMEFRAME_H1, 100)
+    h4_df = get_data(SYMBOL, mt5.TIMEFRAME_H4, 100)
+
+    h1_trend, h1_atr = calculate_trend(h1_df)
+    h4_trend, _ = calculate_trend(h4_df)
+
+    dynamic_threshold = h1_df['ATR14'].rolling(20).mean().iloc[-1] if 'ATR14' in h1_df else 200
+    adjusted_threshold = ATR_THRESHOLD_FACTOR * dynamic_threshold
+
+    if h1_trend == h4_trend and h1_trend != "sideways":
+        trend = h1_trend
+    else:
+        trend = "sideways"
+
+    return trend, h1_atr, adjusted_threshold
 
 def print_detected_zones(demand_zones, supply_zones, fast_demand, fast_supply):
     print(f"[INFO] Strict Zones: {len(demand_zones)} demand, {len(supply_zones)} supply")
@@ -66,6 +100,16 @@ def print_detected_zones(demand_zones, supply_zones, fast_demand, fast_supply):
         print(f"  Fast Demand @ {zone['price']:.2f} at {zone['time']}")
     for zone in fast_supply:
         print(f"  Fast Supply @ {zone['price']:.2f} at {zone['time']}")
+
+def should_switch_mode(current_time):
+    global _last_switch_time
+    if _last_switch_time is None:
+        _last_switch_time = current_time
+        return True
+    if (current_time - _last_switch_time).total_seconds() > 1800:
+        _last_switch_time = current_time
+        return True
+    return False
 
 def check_for_closed_trades():
     deals = mt5.history_deals_get(datetime.now() - timedelta(days=1), datetime.now())
@@ -93,9 +137,7 @@ def check_for_closed_trades():
                 else:
                     sl = None
                     tp = None
-                #sl = deal.sl
-                #tp = deal.tp
-                strategy_mode = "unknown"
+                strategy_mode = _current_mode or "unknown"
                 seen.add((deal.position_id, exit_deal.time))
                 log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, result, strategy_mode, sl, tp, silent=True)
 
@@ -130,10 +172,20 @@ def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
         _last_zone_alert_time = current_h1_time
         send_telegram_message(f"📊 New zones detected.\nStrict: D={len(demand_zones)}, S={len(supply_zones)} | Fast: D={len(fast_demand)}, S={len(fast_supply)}")
 
-    trend = calculate_h1_trend(h1_df)
-    if not trend:
-        print("[ERROR] Not enough H1 data for trend.")
-        return
+    trend, atr, atr_threshold = determine_combined_trend()
+    now = datetime.now()
+
+    if MANUAL_OVERRIDE:
+        send_telegram_message(f"📌 Manual override active. Locked strategy: {strategy_mode}")
+        notify_strategy_change(strategy_mode)
+    elif AUTO_SWITCH_ENABLED and should_switch_mode(now):
+        if trend == "sideways" or (atr is not None and atr < atr_threshold):
+            strategy_mode = "aggressive"
+        else:
+            strategy_mode = "trend_follow"
+        notify_strategy_change(strategy_mode)
+    else:
+        notify_strategy_change(strategy_mode)
 
     m1_df = get_data(SYMBOL, TIMEFRAME_ENTRY, 5)
     if len(m1_df) < 4:
@@ -184,23 +236,31 @@ def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
             result = place_order(SYMBOL, side, lot, sl, tp, MAGIC)
         except TypeError as e:
             print(f"[ERROR] Order placement failed: {e}")
-            send_telegram_message("❌ Order placement failed: check your trade_executor function definition")
+            send_telegram_message("\u274c Order placement failed: check your trade_executor function definition")
             return
 
         if result is not None:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 confirmation = (
-                    f"✅ ORDER PLACED\n{side.upper()} {SYMBOL}\n"
+                    f"\u2705 ORDER PLACED\n{side.upper()} {SYMBOL}\n"
                     f"Price: {result.price:.2f}\nSL: {sl:.2f} | TP: {tp:.2f}"
                 )
                 send_telegram_message(confirmation)
                 active_trades[(side, zone)] = True
             else:
-                error_msg = f"❌ Order Failed\nRetcode: {result.retcode}\nMessage: {result.comment}"
+                error_msg = f"\u274c Order Failed\nRetcode: {result.retcode}\nMessage: {result.comment}"
                 print(error_msg)
                 send_telegram_message(error_msg)
         else:
-            send_telegram_message("❌ Order attempt returned None")
+            send_telegram_message("\u274c Order attempt returned None")
 
     trail_sl(SYMBOL, MAGIC)
     check_for_closed_trades()
+
+def zones_equal(z1, z2):
+    if len(z1) != len(z2):
+        return False
+    for a, b in zip(z1, z2):
+        if abs(a['price'] - b['price']) > 1e-5 or a['time'] != b['time']:
+            return False
+    return True
