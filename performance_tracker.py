@@ -1,4 +1,4 @@
-# === performance_tracker.py (Advanced Summary: Strategy Mode, SL/TP, Weekly Stats) ===
+# === performance_tracker.py (Advanced Summary + Live Stats) ===
 import csv
 from datetime import datetime, date, timedelta
 import os
@@ -189,3 +189,42 @@ def send_weekly_summary():
     summary_msg, breakdown_msg = generate_summary(weekly_trades, title=f"📅 Weekly Summary ({start_of_week} → {end_of_week})")
     send_telegram_message(summary_msg)
     send_telegram_message(breakdown_msg)
+
+def get_live_stats():
+    today = datetime.now().date()
+    pnl = 0
+    trades_today = 0
+    wins = 0
+    losses = 0
+
+    if not os.path.exists(log_file):
+        return {
+            "pnl": 0.00,
+            "trades_today": 0,
+            "win_rate": 0.0
+        }
+
+    with open(log_file, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                exit_time = datetime.strptime(row["Exit Time"], "%Y-%m-%d %H:%M:%S")
+                if exit_time.date() == today:
+                    profit = float(row["Profit"])
+                    pnl += profit
+                    trades_today += 1
+                    if row["Result"].lower() == "win":
+                        wins += 1
+                    elif row["Result"].lower() == "loss":
+                        losses += 1
+            except:
+                continue
+
+    total = wins + losses
+    win_rate = (wins / total * 100) if total > 0 else 0
+
+    return {
+        "pnl": round(pnl, 2),
+        "trades_today": trades_today,
+        "win_rate": round(win_rate, 1)
+    }

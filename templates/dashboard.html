@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VIX75 Elite Trading Dashboard - Nawthviper</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0a 100%);
+      color: #ffffff;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(circle at 20% 20%, rgba(0, 242, 96, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(5, 117, 230, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(255, 65, 108, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 2rem;
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      text-decoration: none;
+      transition: transform 0.3s ease;
+    }
+
+    .logo:hover {
+      transform: translateY(-2px);
+    }
+
+    .logo-icon {
+      font-size: 2rem;
+      filter: drop-shadow(0 0 8px rgba(0, 242, 96, 0.5));
+    }
+
+    .logo-text {
+      font-size: 1.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00f260, #0575e6, #00f260);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: gradientShift 3s ease-in-out infinite;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    .status-indicator {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(10px);
+      padding: 0.8rem 1.5rem;
+      border-radius: 25px;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .status-indicator:hover {
+      background: rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ff4757;
+      box-shadow: 0 0 15px #ff4757;
+      animation: pulse 2s infinite;
+      position: relative;
+    }
+
+    .status-dot::before {
+      content: '';
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      border-radius: 50%;
+      background: inherit;
+      opacity: 0.3;
+      animation: ripple 2s infinite;
+    }
+
+    .status-dot.active {
+      background: #2ed573;
+      box-shadow: 0 0 20px #2ed573;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .dashboard-title {
+      font-size: 3rem;
+      background: linear-gradient(135deg, #00f260, #0575e6, #ff416c);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 900;
+      text-align: center;
+      margin: 3rem 0 1rem 0;
+      animation: gradientShift 4s ease-in-out infinite;
+      text-shadow: 0 0 30px rgba(0, 242, 96, 0.3);
+    }
+
+    .dashboard-subtitle {
+      text-align: center;
+      margin-bottom: 3rem;
+      font-size: 1.3rem;
+      color: #b8bcc8;
+      font-weight: 300;
+      letter-spacing: 0.5px;
+    }
+
+    .control-panel, .stats-grid {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      margin: 2rem auto;
+      padding: 2.5rem;
+      border-radius: 24px;
+      width: 90%;
+      max-width: 900px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+    }
+
+    .control-panel:hover, .stats-grid:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 
+        0 25px 50px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    .control-title {
+      font-size: 1.8rem;
+      color: #00ff88;
+      margin-bottom: 2rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 2rem;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 0.8rem;
+      font-weight: 600;
+      color: #e1e5e9;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      padding: 1rem 1.5rem;
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: rgba(0, 242, 96, 0.5);
+      box-shadow: 0 0 20px rgba(0, 242, 96, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      padding: 0.8rem 1.5rem;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.3s ease;
+      font-weight: 500;
+    }
+
+    .radio-option:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .radio-option input[type="radio"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #00f260;
+    }
+
+    .form-group:last-child {
+      display: flex;
+      gap: 1rem;
+      margin-top: 3rem;
+    }
+
+    .btn {
+      padding: 1rem 2.5rem;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s ease;
+    }
+
+    .btn:hover::before {
+      left: 100%;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00f260, #0575e6);
+      color: #000;
+      box-shadow: 0 10px 30px rgba(0, 242, 96, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 40px rgba(0, 242, 96, 0.4);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ff416c, #ff4b2b);
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(255, 65, 108, 0.3);
+    }
+
+    .btn-danger:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 40px rgba(255, 65, 108, 0.4);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+
+    .stat-card {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(15px);
+      padding: 2rem;
+      border-radius: 20px;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00f260, #0575e6, #ff416c);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-5px);
+      background: rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .stat-card:hover::before {
+      opacity: 1;
+    }
+
+    .stat-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      filter: drop-shadow(0 0 10px rgba(0, 242, 96, 0.5));
+    }
+
+    .stat-number {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #00f260, #0575e6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label {
+      color: #b8bcc8;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+    }
+
+    @media (max-width: 768px) {
+      .header-content {
+        padding: 1rem;
+      }
+      
+      .dashboard-title {
+        font-size: 2.2rem;
+      }
+      
+      .control-panel, .stats-grid {
+        width: 95%;
+        padding: 1.5rem;
+      }
+      
+      .radio-group {
+        flex-direction: column;
+        gap: 1rem;
+      }
+      
+      .form-group:last-child {
+        flex-direction: column;
+      }
+      
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .loading-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top: 3px solid #00f260;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <header>
+    <div class="header-content">
+      <a href="/" class="logo">
+        <div class="logo-icon">🐍</div>
+        <div class="logo-text">Nawthviper</div>
+      </a>
+      <div class="status-indicator">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Loading...</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard-container">
+    <h1 class="dashboard-title">VIX75 Elite Trading Dashboard</h1>
+    <p class="dashboard-subtitle">Professional algorithmic trading control center</p>
+
+    <div class="control-panel">
+      <h2 class="control-title">⚙️ Trading Bot Controls</h2>
+      <form class="control-form" id="tradingForm">
+        <div class="form-group">
+          <label class="form-label">Strategy Mode</label>
+          <div class="radio-group">
+            <label class="radio-option">
+              <input type="radio" name="strategy" value="trend_follow" required> Trend Follow
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="strategy" value="aggressive"> Aggressive
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Lot Size</label>
+          <input type="number" name="lot_size" class="form-input" step="0.001" min="0.001" value="0.001" required>
+        </div>
+
+        <div class="form-group">
+          <button type="button" class="btn btn-primary" onclick="controlBot('start')">🚀 Start Bot</button>
+          <button type="button" class="btn btn-danger" onclick="controlBot('stop')">🛑 Stop Bot</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <div class="stat-number" id="pnlStat">$0.00</div>
+        <div class="stat-label">Today's P&L</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-number" id="tradeCount">0</div>
+        <div class="stat-label">Trades Today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-number" id="winRate">0.0%</div>
+        <div class="stat-label">Win Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⚡</div>
+        <div class="stat-number">2.1ms</div>
+        <div class="stat-label">Avg Execution</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showLoading() {
+      document.getElementById('loadingOverlay').classList.add('active');
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.remove('active');
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch("/status");
+        const data = await res.json();
+        const dot = document.getElementById("statusDot");
+        const text = document.getElementById("statusText");
+
+        if (data.running) {
+          dot.classList.add("active");
+          text.textContent = `🟢 Bot Active: ${data.strategy} @ Lot ${data.lot}`;
+        } else {
+          dot.classList.remove("active");
+          text.textContent = "🔴 Bot Offline";
+        }
+      } catch (err) {
+        console.error("Failed to fetch bot status");
+        document.getElementById("statusText").textContent = "⚠️ Connection Error";
+      }
+    }
+
+    async function fetchStats() {
+      try {
+        const res = await fetch("/stats");
+        const data = await res.json();
+        
+        // Animate number changes
+        animateNumber('pnlStat', data.pnl, '$');
+        animateNumber('tradeCount', data.trades_today);
+        animateNumber('winRate', data.win_rate, '', '%');
+      } catch (err) {
+        console.error("Failed to fetch stats");
+      }
+    }
+
+    function animateNumber(elementId, newValue, prefix = '', suffix = '') {
+      const element = document.getElementById(elementId);
+      const currentValue = parseFloat(element.textContent.replace(/[^0-9.-]/g, '')) || 0;
+      const difference = newValue - currentValue;
+      const steps = 20;
+      const increment = difference / steps;
+      
+      let current = currentValue;
+      let step = 0;
+      
+      const timer = setInterval(() => {
+        current += increment;
+        step++;
+        
+        if (step >= steps) {
+          current = newValue;
+          clearInterval(timer);
+        }
+        
+        const displayValue = elementId === 'winRate' ? current.toFixed(1) : 
+                           elementId === 'pnlStat' ? current.toFixed(2) : 
+                           Math.round(current);
+        
+        element.textContent = `${prefix}${displayValue}${suffix}`;
+      }, 50);
+    }
+
+    async function controlBot(action) {
+      const form = document.getElementById("tradingForm");
+      const formData = new FormData(form);
+      const strategy = formData.get("strategy");
+      const lot_size = formData.get("lot_size");
+
+      if (action === "start" && !strategy) {
+        showAlert("Please select a strategy mode.", "warning");
+        return;
+      }
+
+      showLoading();
+
+      const payload = {
+        action,
+        strategy,
+        lot_size
+      };
+
+      try {
+        const res = await fetch("/dashboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const msg = await res.json();
+        showAlert(msg.message, action === "start" ? "success" : "info");
+      } catch (err) {
+        showAlert("Bot control failed. Check server connection.", "error");
+        console.error(err);
+      } finally {
+        hideLoading();
+      }
+
+      // Refresh status immediately
+      setTimeout(() => {
+        fetchStatus();
+        fetchStats();
+      }, 500);
+    }
+
+    function showAlert(message, type = "info") {
+      // Create a more professional alert
+      const alertDiv = document.createElement('div');
+      alertDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 2rem;
+        border-radius: 12px;
+        color: white;
+        font-weight: 600;
+        z-index: 1001;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+      `;
+      
+      switch(type) {
+        case 'success':
+          alertDiv.style.background = 'rgba(46, 213, 115, 0.9)';
+          break;
+        case 'error':
+          alertDiv.style.background = 'rgba(255, 65, 108, 0.9)';
+          break;
+        case 'warning':
+          alertDiv.style.background = 'rgba(255, 193, 7, 0.9)';
+          break;
+        default:
+          alertDiv.style.background = 'rgba(5, 117, 230, 0.9)';
+      }
+      
+      alertDiv.textContent = message;
+      document.body.appendChild(alertDiv);
+      
+      setTimeout(() => alertDiv.style.transform = 'translateX(0)', 100);
+      setTimeout(() => {
+        alertDiv.style.transform = 'translateX(100%)';
+        setTimeout(() => document.body.removeChild(alertDiv), 300);
+      }, 3000);
+    }
+
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchStatus();
+      fetchStats();
+      
+      // Set up periodic updates
+      setInterval(() => {
+        fetchStatus();
+        fetchStats();
+      }, 5000);
+    });
+  </script>
+</body>
+</html>
