@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Trade Journal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <a href="/" class="logo">
+        <div class="logo-icon">📓</div>
+        <div class="logo-text">Trade Journal</div>
+      </a>
+      <a href="/dashboard" class="btn btn-primary" style="margin-right: 2rem;">⬅️ Back to Dashboard</a>
+    </div>
+  </header>
+
+  <div class="dashboard-container">
+    <h1 class="dashboard-title">📘 Performance Summary</h1>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-number">{{ stats.total_trades }}</div>
+        <div class="stat-label">Total Trades</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-number">{{ stats.wins }}</div>
+        <div class="stat-label">Wins</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">❌</div>
+        <div class="stat-number">{{ stats.losses }}</div>
+        <div class="stat-label">Losses</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-number">{{ stats.win_rate }}%</div>
+        <div class="stat-label">Win Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <div class="stat-number">${{ stats.total_profit }}</div>
+        <div class="stat-label">Total Profit</div>
+      </div>
+    </div>
+
+    {% if stats.last_trade %}
+      <div class="control-panel">
+        <h2 class="control-title">📄 Last Trade Snapshot</h2>
+        <p><strong>Side:</strong> {{ stats.last_trade["Side"] }}</p>
+        <p><strong>Entry:</strong> {{ stats.last_trade["Entry Price"] }}</p>
+        <p><strong>Exit:</strong> {{ stats.last_trade["Exit Price"] }}</p>
+        <p><strong>Profit:</strong> {{ stats.last_trade["Profit"] }}</p>
+        <p><strong>Outcome:</strong> {{ stats.last_trade["Outcome"] }}</p>
+        <p><strong>Mode:</strong> {{ stats.last_trade["Strategy Mode"] }}</p>
+        <p><strong>Reason:</strong> {{ stats.last_trade["Entry Reason"] }}</p>
+      </div>
+    {% else %}
+      <div class="control-panel">
+        <p>No trades recorded yet.</p>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>

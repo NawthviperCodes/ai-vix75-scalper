@@ -1,12 +1,12 @@
-# === Updated trade_executor.py (Fixed SL/TP Validation + Lot Size Step Handling) ===
+# === trade_executor.py (Improved SL Logic for VIX75 + False Breakout Support) ===
 
 import MetaTrader5 as mt5
 from telegram_notifier import send_telegram_message
 
-FALLBACK_STOPS_LEVEL = 10770  # 107.70 price (2 digits) for VIX75
+FALLBACK_STOPS_LEVEL = 10770
 TRAILING_TRIGGER = 3000
 TRAILING_STEP = 1000
-TP_RATIO = 2  # Used to calculate TP based on SL
+TP_RATIO = 2
 
 
 def validate_lot(symbol_info, lot):
@@ -25,9 +25,7 @@ def validate_lot(symbol_info, lot):
     elif round((lot - min_lot) % lot_step, 6) != 0:
         print(f"[WARN] Lot size {lot} is not a valid step size of {lot_step}. Adjusted to nearest valid step.")
 
-    # Round to nearest step
     lot = round(round(lot / lot_step) * lot_step, 3)
-
     if lot != original_lot:
         print(f"[INFO] Final validated lot size: {lot}")
 
@@ -45,10 +43,9 @@ def place_order(symbol, order_type, lot, sl_price, tp_price, magic_number):
     stops_level = getattr(symbol_info, "stops_level", FALLBACK_STOPS_LEVEL)
     point = symbol_info.point
     digits = symbol_info.digits
-    
-    # Calculate minimal allowed distance (in price)
-    min_distance = stops_level * point * 1.2  # Add 20% buffer to stops_level
-    min_tp_distance = min_distance * TP_RATIO  # Maintain risk/reward ratio
+
+    min_distance = stops_level * point * 2.5  # Extended SL buffer
+    min_tp_distance = min_distance * TP_RATIO
 
     tick = mt5.symbol_info_tick(symbol)
     if not tick:
@@ -58,36 +55,24 @@ def place_order(symbol, order_type, lot, sl_price, tp_price, magic_number):
     price = tick.ask if order_type == "buy" else tick.bid
     deviation = 20
 
-    # Validate and adjust SL/TP to meet broker requirements
     if order_type == "buy":
-        # Ensure SL is below current price
         if sl_price >= price:
             sl_price = price - min_distance
-        
-        # Ensure SL distance meets requirement
         if (price - sl_price) < min_distance:
             sl_price = round(price - min_distance, digits)
-        
-        # Ensure TP distance meets requirement
         if (tp_price - price) < min_tp_distance:
             tp_price = round(price + (price - sl_price) * TP_RATIO, digits)
-    else:  # sell
-        # Ensure SL is above current price
+    else:
         if sl_price <= price:
             sl_price = price + min_distance
-            
-        # Ensure SL distance meets requirement
         if (sl_price - price) < min_distance:
             sl_price = round(price + min_distance, digits)
-        
-        # Ensure TP distance meets requirement
         if (price - tp_price) < min_tp_distance:
             tp_price = round(price - (sl_price - price) * TP_RATIO, digits)
 
-    # Round to correct digits
     sl_price = round(sl_price, digits)
     tp_price = round(tp_price, digits)
-    
+
     print(f"[DEBUG] Entry: {price:.2f} | SL: {sl_price:.2f} | TP: {tp_price:.2f}")
     print(f"[DEBUG] SL distance: {abs(price - sl_price):.2f}, TP distance: {abs(tp_price - price):.2f}")
 

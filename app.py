@@ -71,6 +71,12 @@ def get_stats():
 def about():
     return redirect(url_for("home") + "#about")
 
+@app.route("/journal")
+def journal():
+    from performance_tracker import get_live_stats
+    stats = get_live_stats()
+    return render_template("journal.html", stats=stats)
+
 @app.route("/login")
 def login():
     return "<h2 style='color:white; text-align:center; margin-top:100px;'>🔐 Login Coming Soon</h2>"
