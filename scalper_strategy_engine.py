@@ -107,21 +107,59 @@ def zones_equal(z1, z2):
     return True
 
 
-def send_zone_alerts(demand_zones, supply_zones, fast_demand, fast_supply):
+def send_zone_alerts(demand_zones, supply_zones, fast_demand, fast_supply, strength_threshold=50, all_demand_zones=None, all_supply_zones=None):
     msg = "📈 New Zones Detected:\n"
+
+    # Strict Demand Zones (strong)
+    msg += "\n🟢 Strict Demand Zones:\n"
     if demand_zones:
-        msg += "\n🟢 Strict Demand Zones:\n" + "\n".join(
-            [f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in demand_zones])
+        msg += "\n".join([
+            f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in demand_zones
+        ])
+    else:
+        msg += f"None found. ⚠️ Reason: All detected demand zones had strength below {strength_threshold}%."
+
+    # Strict Supply Zones (strong)
+    msg += "\n\n🔴 Strict Supply Zones:\n"
     if supply_zones:
-        msg += "\n🔴 Strict Supply Zones:\n" + "\n".join(
-            [f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in supply_zones])
+        msg += "\n".join([
+            f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in supply_zones
+        ])
+    else:
+        msg += f"None found. ⚠️ Reason: All detected supply zones had strength below {strength_threshold}%."
+
+    # 🔸 Weak Demand Zones
+    if all_demand_zones is not None:
+        weak_demand = [z for z in all_demand_zones if z['strength'] < strength_threshold]
+        if weak_demand:
+            msg += "\n\n🔸 Weak Demand Zones (filtered out):\n"
+            msg += "\n".join([
+                f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in weak_demand
+            ])
+
+    # 🔹 Weak Supply Zones
+    if all_supply_zones is not None:
+        weak_supply = [z for z in all_supply_zones if z['strength'] < strength_threshold]
+        if weak_supply:
+            msg += "\n\n🔹 Weak Supply Zones (filtered out):\n"
+            msg += "\n".join([
+                f"- {z['price']:.2f} ({z['strength']}%) @ {z['time'].strftime('%H:%M')}" for z in weak_supply
+            ])
+
+    # ⚡ Fast Zones
     if fast_demand:
-        msg += "\n⚡ Fast Demand Zones:\n" + "\n".join(
-            [f"- {z['price']:.2f} (🔥) @ {z['time'].strftime('%H:%M')}" for z in fast_demand])
+        msg += "\n\n⚡ Fast Demand Zones:\n" + "\n".join([
+            f"- {z['price']:.2f} (🔥) @ {z['time'].strftime('%H:%M')}" for z in fast_demand
+        ])
     if fast_supply:
-        msg += "\n⚡ Fast Supply Zones:\n" + "\n".join(
-            [f"- {z['price']:.2f} (🔥) @ {z['time'].strftime('%H:%M')}" for z in fast_supply])
+        msg += "\n\n⚡ Fast Supply Zones:\n" + "\n".join([
+            f"- {z['price']:.2f} (🔥) @ {z['time'].strftime('%H:%M')}" for z in fast_supply
+        ])
+
     send_telegram_message(msg)
+
+
+
 
 
 def should_switch_mode(current_time):
@@ -134,26 +172,84 @@ def should_switch_mode(current_time):
 
 
 def check_for_closed_trades():
-    deals = mt5.history_deals_get(datetime.now() - timedelta(days=1), datetime.now())
+    start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    deals = mt5.history_deals_get(start_of_today, datetime.now())
     if not deals:
+        print("[INFO] No deals found in history.")
         return
-    seen = set()
+
+    seen_positions = set()
+
+    # Group deals by position_id for clearer matching
+    deals_by_position = {}
     for deal in deals:
-        if deal.entry != 1:
-            continue
-        for exit_deal in deals:
-            if exit_deal.entry == 0 and exit_deal.position_id == deal.position_id and (deal.position_id, exit_deal.time) not in seen:
-                entry_time = datetime.fromtimestamp(deal.time, tz=pytz.utc).astimezone()
-                exit_time = datetime.fromtimestamp(exit_deal.time, tz=pytz.utc).astimezone()
-                side = "buy" if deal.type == mt5.ORDER_TYPE_BUY else "sell"
-                log_trade(entry_time, exit_time, side, deal.price, exit_deal.price, exit_deal.profit,
-                          "win" if exit_deal.profit > 0 else "loss", _current_mode or "unknown", None, None)
-                seen.add((deal.position_id, exit_deal.time))
-                for key in list(active_trades.keys()):
-                    if key[0] == side and abs(key[1] - deal.price) < CHECK_RANGE * mt5.symbol_info(SYMBOL).point:
-                        del active_trades[key]
-                        break
-                break
+        deals_by_position.setdefault(deal.position_id, []).append(deal)
+
+    for position_id, position_deals in deals_by_position.items():
+        # Find entry deal (entry == 1)
+        entry_deal = next((d for d in position_deals if d.entry == 1), None)
+        if not entry_deal:
+            continue  # No entry deal for this position
+
+        # Find exit deal(s) (entry == 0) that correspond to this position
+        exit_deals = [d for d in position_deals if d.entry == 0]
+        if not exit_deals:
+            continue  # Still open or no exit recorded
+
+        for exit_deal in exit_deals:
+            # Avoid logging same exit twice
+            unique_key = (position_id, exit_deal.time)
+            if unique_key in seen_positions:
+                continue
+
+            # Correct entry and exit time ordering
+            time_1 = datetime.fromtimestamp(entry_deal.time, tz=pytz.utc).astimezone()
+            time_2 = datetime.fromtimestamp(exit_deal.time, tz=pytz.utc).astimezone()
+
+            entry_time = min(time_1, time_2)
+            exit_time = max(time_1, time_2)
+
+            # Determine side based on price movement
+            if exit_deal.price > entry_deal.price:
+                side = "buy"
+            else:
+                side = "sell"
+
+            lot_size = exit_deal.volume
+            contract_size = mt5.symbol_info(SYMBOL).trade_contract_size
+            price_diff = exit_deal.price - entry_deal.price
+            direction = 1 if side == "buy" else -1
+            profit = price_diff * direction * lot_size * contract_size
+
+            print(f"[DEBUG] Logging closed trade | Side: {side} | Entry: {entry_deal.price} | Exit: {exit_deal.price} | Profit: {profit:.2f}")
+
+            log_trade(
+                entry_time,
+                exit_time,
+                side,
+                entry_deal.price,
+                exit_deal.price,
+                profit,
+                "win" if profit > 0 else "loss",
+                _current_mode or "unknown",
+                None,
+                None
+            )
+            seen_positions.add(unique_key)
+
+            # Remove trade from active_trades if present
+            to_delete = None
+            for key in active_trades.keys():
+                if key[0] == side and abs(key[1] - entry_deal.price) < CHECK_RANGE * mt5.symbol_info(SYMBOL).point:
+                    to_delete = key
+                    break
+            if to_delete:
+                del active_trades[to_delete]
+                print(f"[INFO] Removed {side.upper()} trade from active_trades: {to_delete}")
+            else:
+                print(f"[WARN] Orphan closed trade: {side.upper()} at {entry_deal.price} (not in active_trades)")
+
+
 
 
 def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
@@ -180,6 +276,8 @@ def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
         return
 
     demand_zones, supply_zones = detect_zones(h1_df)
+    all_demand_zones, all_supply_zones = demand_zones.copy(), supply_zones.copy()
+
     fast_demand, fast_supply = detect_fast_zones(h1_df)
 
     if strategy_mode == "trend_follow":
@@ -197,7 +295,16 @@ def monitor_and_trade(strategy_mode="trend_follow", fixed_lot=None):
         _last_supply_zones = supply_zones
         _last_fast_demand = fast_demand
         _last_fast_supply = fast_supply
-        send_zone_alerts(demand_zones, supply_zones, fast_demand, fast_supply)
+        send_zone_alerts(
+    demand_zones,
+    supply_zones,
+    fast_demand,
+    fast_supply,
+    strength_threshold=ZONE_STRENGTH_THRESHOLD,
+    all_demand_zones=all_demand_zones,
+    all_supply_zones=all_supply_zones
+)
+
 
     trend, atr, atr_threshold = determine_combined_trend()
 

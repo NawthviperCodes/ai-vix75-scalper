@@ -2,8 +2,350 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Trade Journal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Trade Journal - Nawthviper</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0a 100%);
+      color: #ffffff;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(circle at 20% 20%, rgba(0, 242, 96, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(5, 117, 230, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(255, 65, 108, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem 2rem;
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      text-decoration: none;
+      transition: transform 0.3s ease;
+    }
+
+    .logo:hover {
+      transform: translateY(-2px);
+    }
+
+    .logo-icon {
+      font-size: 2rem;
+      filter: drop-shadow(0 0 8px rgba(0, 242, 96, 0.5));
+    }
+
+    .logo-text {
+      font-size: 1.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00f260, #0575e6, #00f260);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: gradientShift 3s ease-in-out infinite;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    .btn {
+      padding: 1rem 2.5rem;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      position: relative;
+      overflow: hidden;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s ease;
+    }
+
+    .btn:hover::before {
+      left: 100%;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00f260, #0575e6);
+      color: #000;
+      box-shadow: 0 10px 30px rgba(0, 242, 96, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 40px rgba(0, 242, 96, 0.4);
+    }
+
+    .dashboard-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+
+    .dashboard-title {
+      font-size: 3rem;
+      background: linear-gradient(135deg, #00f260, #0575e6, #ff416c);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 900;
+      text-align: center;
+      margin: 3rem 0 1rem 0;
+      animation: gradientShift 4s ease-in-out infinite;
+      text-shadow: 0 0 30px rgba(0, 242, 96, 0.3);
+    }
+
+    .stats-grid {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      margin: 2rem auto;
+      padding: 2rem;
+      border-radius: 24px;
+      width: 90%;
+      max-width: 900px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .stats-grid:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 
+        0 25px 50px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    .stat-card {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(15px);
+      padding: 2rem;
+      border-radius: 20px;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00f260, #0575e6, #ff416c);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-5px);
+      background: rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .stat-card:hover::before {
+      opacity: 1;
+    }
+
+    .stat-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      filter: drop-shadow(0 0 10px rgba(0, 242, 96, 0.5));
+    }
+
+    .stat-number {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #00f260, #0575e6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label {
+      color: #b8bcc8;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+    }
+
+    .control-panel {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      margin: 2rem auto;
+      padding: 2.5rem;
+      border-radius: 24px;
+      width: 90%;
+      max-width: 900px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+    }
+
+    .control-panel:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 
+        0 25px 50px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    .control-title {
+      font-size: 1.8rem;
+      color: #00ff88;
+      margin-bottom: 2rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .control-panel p {
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #e1e5e9;
+    }
+
+    .control-panel p strong {
+      color: #00f260;
+      font-weight: 600;
+      min-width: 100px;
+      display: inline-block;
+    }
+
+    .control-panel p:last-child {
+      margin-bottom: 0;
+    }
+
+    .journal-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .journal-table thead {
+      background: linear-gradient(135deg, rgba(0, 242, 96, 0.1), rgba(5, 117, 230, 0.1));
+    }
+
+    .journal-table th {
+      padding: 1.2rem 1rem;
+      text-align: left;
+      font-weight: 700;
+      color: #00f260;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .journal-table tbody tr {
+      background: rgba(255, 255, 255, 0.02);
+      transition: all 0.3s ease;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .journal-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+      box-shadow: 0 5px 15px rgba(0, 242, 96, 0.1);
+    }
+
+    .journal-table td {
+      padding: 1rem;
+      color: #e1e5e9;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .journal-table tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    .journal-table tbody tr:nth-child(even):hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    @media (max-width: 768px) {
+      .header-content {
+        padding: 1rem;
+      }
+      
+      .dashboard-title {
+        font-size: 2.2rem;
+      }
+      
+      .control-panel, .stats-grid {
+        width: 95%;
+        padding: 1.5rem;
+      }
+      
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
   <header>
@@ -61,6 +403,40 @@
     {% else %}
       <div class="control-panel">
         <p>No trades recorded yet.</p>
+      </div>
+    {% endif %}
+
+    {% if stats.recent_trades %}
+      <div class="control-panel">
+        <h2 class="control-title">📅 Recent Trade History</h2>
+        <table class="journal-table">
+          <thead>
+            <tr>
+              <th>Time In</th>
+              <th>Time Out</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>PnL</th>
+              <th>Result</th>
+              <th>Mode</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in stats.recent_trades %}
+              <tr>
+                <td>{{ row["Entry Time"] }}</td>
+                <td>{{ row["Exit Time"] }}</td>
+                <td>{{ row["Side"] }}</td>
+                <td>{{ row["Entry Price"] }}</td>
+                <td>{{ row["Exit Price"] }}</td>
+                <td>{{ row["Profit"] }}</td>
+                <td>{{ row["Outcome"] }}</td>
+                <td>{{ row["Strategy Mode"] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     {% endif %}
   </div>
