@@ -1,26 +1,53 @@
+# === performance_tracker.py (VIX75 Elite Logging & Summary System) ===
+
 import csv
-from datetime import datetime, date
 import os
+from datetime import datetime, date
 from telegram_notifier import send_telegram_message  # Required for send_daily_summary
 
-# Journal CSV file path
+# CSV file path for trade journal
 file_path = "trade_journal.csv"
+
+def init_log():
+    """Create the journal file with headers if it doesn't exist."""
+    if not os.path.exists(file_path):
+        with open(file_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                "Timestamp", "Side", "Entry Price", "Exit Price", "Profit", "Outcome",
+                "Strategy Mode", "Zone Type", "Entry Reason", "SL", "TP", "Entry Time", "Exit Time"
+            ])
+        print("[Init Log] Created new journal file.")
+    else:
+        print("[Init Log] Journal already exists.")
+
+
+def sanitize_trade_dict(trade):
+    """Ensure no None keys or values cause errors in the dashboard or API."""
+    return {
+        (k if k else "Unknown"): (v if v not in [None, "", "-"] else "-")
+        for k, v in trade.items()
+    }
 
 
 def log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, outcome,
               strategy_mode, zone_type, entry_reason, sl=None, tp=None):
+    """Append a new trade to the journal, avoiding duplicates."""
+
     file_exists = os.path.isfile(file_path)
 
-    # Check for duplicates before logging
+    # Convert times to string for comparison
+    entry_str = entry_time.strftime("%Y-%m-%d %H:%M:%S")
+    exit_str = exit_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Check for duplicates
     if file_exists:
         with open(file_path, mode='r') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                if (row.get("Entry Time") == entry_time.strftime("%Y-%m-%d %H:%M:%S") and
-                    row.get("Exit Time") == exit_time.strftime("%Y-%m-%d %H:%M:%S") and
-                    row.get("Side") == side):
-                    print(f"[Duplicate] Trade already logged: {side} {entry_time} -> {exit_time}")
-                    return  # Duplicate found, skip logging
+                if row.get("Entry Time") == entry_str and row.get("Exit Time") == exit_str and row.get("Side") == side:
+                    print(f"[Duplicate] Trade already logged: {side} {entry_str} -> {exit_str}")
+                    return
 
     with open(file_path, mode='a', newline='') as file:
         writer = csv.writer(file)
@@ -29,33 +56,26 @@ def log_trade(entry_time, exit_time, side, entry_price, exit_price, profit, outc
                 "Timestamp", "Side", "Entry Price", "Exit Price", "Profit", "Outcome",
                 "Strategy Mode", "Zone Type", "Entry Reason", "SL", "TP", "Entry Time", "Exit Time"
             ])
-
         writer.writerow([
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             side,
             round(entry_price, 2),
             round(exit_price, 2),
             round(profit, 2) if profit is not None else 0.0,
-            outcome,
+            outcome.capitalize(),
             strategy_mode,
             zone_type or "-",
             entry_reason or "-",
             round(sl, 2) if sl else "-",
             round(tp, 2) if tp else "-",
-            entry_time.strftime("%Y-%m-%d %H:%M:%S") if entry_time else "-",
-            exit_time.strftime("%Y-%m-%d %H:%M:%S") if exit_time else "-"
+            entry_str,
+            exit_str
         ])
-
-
-def sanitize_trade_dict(trade):
-    """Ensure no None keys or values cause JSON errors."""
-    return {
-        (k if k is not None and k != "" else "Unknown"): (v if v not in [None, ""] else "-")
-        for k, v in trade.items()
-    }
+    print(f"[Log] Trade saved: {side} | Entry: {entry_price} | Exit: {exit_price} | Profit: {profit}")
 
 
 def get_live_stats():
+    """Return a live summary of performance."""
     if not os.path.isfile(file_path):
         return {
             "total_trades": 0,
@@ -72,10 +92,10 @@ def get_live_stats():
         trades = list(reader)
 
     total_trades = len(trades)
-    wins = sum(1 for t in trades if t.get("Outcome", "").lower() == "win")
-    losses = sum(1 for t in trades if t.get("Outcome", "").lower() == "loss")
+    wins = sum(1 for t in trades if t.get("Outcome", "").strip().lower() == "win")
+    losses = sum(1 for t in trades if t.get("Outcome", "").strip().lower() == "loss")
     total_profit = sum(float(t["Profit"]) for t in trades if t.get("Profit") not in ["", "-", None])
-    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
     last_trade = trades[-1] if trades else None
 
     return {
@@ -89,22 +109,8 @@ def get_live_stats():
     }
 
 
-def init_log():
-    """Create the journal file with headers if it doesn't exist."""
-    if not os.path.exists(file_path):
-        with open(file_path, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow([
-                "Timestamp", "Side", "Entry Price", "Exit Price", "Profit", "Outcome",
-                "Strategy Mode", "Zone Type", "Entry Reason", "SL", "TP", "Entry Time", "Exit Time"
-            ])
-        print("[Init Log] Created new journal file.")
-    else:
-        print("[Init Log] Journal already exists.")
-
-
 def send_daily_summary():
-    """Send a performance summary for trades made today."""
+    """Send daily performance summary via Telegram."""
     if not os.path.isfile(file_path):
         send_telegram_message("📉 No trade journal found. No summary available.")
         return
@@ -116,10 +122,10 @@ def send_daily_summary():
         trades_today = [t for t in reader if t.get("Timestamp", "").startswith(today_str)]
 
     total = len(trades_today)
-    wins = sum(1 for t in trades_today if t.get("Outcome", "").lower() == "win")
-    losses = sum(1 for t in trades_today if t.get("Outcome", "").lower() == "loss")
+    wins = sum(1 for t in trades_today if t.get("Outcome", "").strip().lower() == "win")
+    losses = sum(1 for t in trades_today if t.get("Outcome", "").strip().lower() == "loss")
     profit = sum(float(t["Profit"]) for t in trades_today if t.get("Profit") not in ["", "-", None])
-    win_rate = (wins / total * 100) if total else 0
+    win_rate = (wins / total * 100) if total else 0.0
 
     msg = (
         f"📊 *Daily Trade Summary* ({today_str}):\n\n"

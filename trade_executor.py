@@ -1,4 +1,4 @@
-# === trade_executor.py (Improved SL Logic for VIX75 + False Breakout Support) ===
+# === trade_executor.py (Elite VIX75 SL/TP Engine + Trailing Logic) ===
 
 import MetaTrader5 as mt5
 from telegram_notifier import send_telegram_message
@@ -7,6 +7,7 @@ FALLBACK_STOPS_LEVEL = 10770
 TRAILING_TRIGGER = 3000
 TRAILING_STEP = 1000
 TP_RATIO = 2
+ATR_MULTIPLIER = 2.0
 
 
 def validate_lot(symbol_info, lot):
@@ -14,68 +15,60 @@ def validate_lot(symbol_info, lot):
     max_lot = symbol_info.volume_max
     lot_step = symbol_info.volume_step
 
-    original_lot = lot
-
     if lot < min_lot:
-        print(f"[WARN] Lot size {lot} below min allowed ({min_lot}). Adjusted to minimum.")
         lot = min_lot
     elif lot > max_lot:
-        print(f"[WARN] Lot size {lot} above max allowed ({max_lot}). Adjusted to maximum.")
         lot = max_lot
     elif round((lot - min_lot) % lot_step, 6) != 0:
-        print(f"[WARN] Lot size {lot} is not a valid step size of {lot_step}. Adjusted to nearest valid step.")
+        lot = round(round(lot / lot_step) * lot_step, 3)
 
-    lot = round(round(lot / lot_step) * lot_step, 3)
-    if lot != original_lot:
-        print(f"[INFO] Final validated lot size: {lot}")
-
-    return lot
+    return round(lot, 3)
 
 
-def place_order(symbol, order_type, lot, sl_price, tp_price, magic_number):
+def place_order(symbol, order_type, lot, sl_price=None, tp_price=None, magic_number=9999, atr=None):
     symbol_info = mt5.symbol_info(symbol)
     if not symbol_info:
-        print("[ERROR] Symbol info not found.")
+        send_telegram_message(f"[ERROR] Symbol '{symbol}' not found.")
         return None
 
-    lot = validate_lot(symbol_info, lot)
-    print(f"[DEBUG] Order Requested with Lot Size: {lot}")
-    stops_level = getattr(symbol_info, "stops_level", FALLBACK_STOPS_LEVEL)
     point = symbol_info.point
     digits = symbol_info.digits
-
-    min_distance = stops_level * point * 2.5  # Extended SL buffer
+    stops_level = symbol_info.stops_level or FALLBACK_STOPS_LEVEL
+    min_distance = stops_level * point * 2.5
     min_tp_distance = min_distance * TP_RATIO
 
     tick = mt5.symbol_info_tick(symbol)
     if not tick:
-        print("[ERROR] Failed to get tick.")
+        send_telegram_message("[ERROR] Tick info not found.")
         return None
 
     price = tick.ask if order_type == "buy" else tick.bid
+    lot = validate_lot(symbol_info, lot)
     deviation = 20
 
-    if order_type == "buy":
-        if sl_price >= price:
-            sl_price = price - min_distance
-        if (price - sl_price) < min_distance:
-            sl_price = round(price - min_distance, digits)
-        if (tp_price - price) < min_tp_distance:
-            tp_price = round(price + (price - sl_price) * TP_RATIO, digits)
-    else:
-        if sl_price <= price:
-            sl_price = price + min_distance
-        if (sl_price - price) < min_distance:
-            sl_price = round(price + min_distance, digits)
-        if (price - tp_price) < min_tp_distance:
-            tp_price = round(price - (sl_price - price) * TP_RATIO, digits)
+    # Dynamic SL if not pre-defined
+    if sl_price is None:
+        sl_distance = max(min_distance, (atr or 0) * ATR_MULTIPLIER)
+        sl_price = price - sl_distance if order_type == "buy" else price + sl_distance
 
     sl_price = round(sl_price, digits)
+
+    # Dynamic TP based on SL if not pre-defined
+    if tp_price is None:
+        tp_distance = abs(price - sl_price) * TP_RATIO
+        tp_price = price + tp_distance if order_type == "buy" else price - tp_distance
+
     tp_price = round(tp_price, digits)
 
-    print(f"[DEBUG] Entry: {price:.2f} | SL: {sl_price:.2f} | TP: {tp_price:.2f}")
-    print(f"[DEBUG] SL distance: {abs(price - sl_price):.2f}, TP distance: {abs(tp_price - price):.2f}")
+    # Final validations
+    if abs(price - sl_price) < min_distance:
+        send_telegram_message("⚠️ SL too close to entry. Order skipped.")
+        return None
+    if abs(tp_price - price) < min_tp_distance:
+        send_telegram_message("⚠️ TP too close to entry. Order skipped.")
+        return None
 
+    print(f"[ORDER] {order_type.upper()} | Entry: {price:.2f}, SL: {sl_price:.2f}, TP: {tp_price:.2f}, Lot: {lot}")
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -93,7 +86,11 @@ def place_order(symbol, order_type, lot, sl_price, tp_price, magic_number):
 
     result = mt5.order_send(request)
     if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-        print(f"[ERROR] Order failed. Retcode: {result.retcode if result else 'N/A'} | Comment: {result.comment if result else 'No result'}")
+        error_msg = f"[ERROR] Order failed. Retcode: {getattr(result, 'retcode', 'N/A')} | Comment: {getattr(result, 'comment', 'No comment')}"
+        print(error_msg)
+        send_telegram_message(error_msg)
+    else:
+        send_telegram_message(f"✅ Trade executed: {order_type.upper()} {symbol} @ {price:.2f}")
     return result
 
 
@@ -127,14 +124,13 @@ def trail_sl(symbol, magic, profit_threshold=TRAILING_TRIGGER, step=TRAILING_STE
         if profit_points > profit_threshold:
             new_sl = entry + (profit_points - step) * direction * point
             if (direction == 1 and new_sl > sl) or (direction == -1 and new_sl < sl):
-                request = {
+                result = mt5.order_send({
                     "action": mt5.TRADE_ACTION_SLTP,
                     "position": pos.ticket,
-                    "sl": new_sl,
-                    "tp": pos.tp,
-                }
-                result = mt5.order_send(request)
+                    "sl": round(new_sl, symbol_info.digits),
+                    "tp": pos.tp
+                })
                 if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-                    msg = f"🔐 Trailing SL updated for {symbol} at {new_sl:.2f}"
+                    msg = f"🔐 Trailing SL updated for {symbol}: {new_sl:.2f}"
                     print(msg)
                     send_telegram_message(msg)

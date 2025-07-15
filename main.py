@@ -1,14 +1,16 @@
-# === main.py ===
+# === main.py (Elite VIX75 Bot Orchestrator) ===
+
 import MetaTrader5 as mt5
+import time
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+
 from scalper_strategy_engine import monitor_and_trade, SYMBOL, TIMEFRAME_ENTRY, notify_strategy_change
 from emergency_control import check_emergency_stop
 from performance_tracker import init_log, send_daily_summary
 from symbol_info_helper import print_symbol_lot_info
 from trade_executor import trail_sl as apply_trailing_stop
-from datetime import datetime
-from dotenv import load_dotenv
-import time
-import os
 
 load_dotenv()
 
@@ -20,13 +22,13 @@ SUMMARY_SENT = False
 BOT_RUNNING = False
 
 
-def run_bot(strategy_mode, lot_size):
+def run_bot(strategy_mode="trend_follow", lot_size=0.001):
     global SUMMARY_SENT, BOT_RUNNING
     BOT_RUNNING = True
 
-    print("Connecting to MetaTrader 5...")
+    print("🔌 Connecting to MetaTrader 5...")
     if not mt5.initialize(login=MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER):
-        print("[ERROR] MT5 Initialization Failed!")
+        print("[❌ ERROR] MT5 Initialization Failed!")
         return
 
     print_symbol_lot_info(SYMBOL)
@@ -34,7 +36,7 @@ def run_bot(strategy_mode, lot_size):
     notify_strategy_change(strategy_mode)
 
     last_candle_time = None
-    print(f"[OK] Bot started in '{strategy_mode}' mode with lot size {lot_size}...\n")
+    print(f"[✅ BOT READY] Mode: '{strategy_mode}' | Lot: {lot_size}\n")
 
     try:
         while BOT_RUNNING:
@@ -51,36 +53,42 @@ def run_bot(strategy_mode, lot_size):
             current_candle_time = rates[0]['time']
             equity = mt5.account_info().equity
 
+            # Emergency stop logic
             if reason := check_emergency_stop(equity):
                 from telegram_notifier import send_telegram_message
-                send_telegram_message(f"\u274c Bot stopped: {reason}")
+                send_telegram_message(f"❌ Bot Stopped: {reason}")
                 mt5.shutdown()
                 break
 
+            # New candle triggers strategy
             if current_candle_time != last_candle_time:
                 last_candle_time = current_candle_time
 
                 try:
                     monitor_and_trade(strategy_mode=strategy_mode, fixed_lot=lot_size)
                 except Exception as e:
-                    print(f"[ERROR] Strategy engine failed: {e}")
+                    print(f"[⚠️ STRATEGY ERROR] {e}")
 
                 apply_trailing_stop(SYMBOL, magic=77775)
 
+                # Daily summary check (between 23:58–23:59)
                 now = datetime.now()
                 if 23 <= now.hour < 24 and 58 <= now.minute <= 59 and not SUMMARY_SENT:
                     send_daily_summary()
                     SUMMARY_SENT = True
 
+                # Reset flag at midnight
                 if now.hour == 0 and now.minute == 0:
                     SUMMARY_SENT = False
 
             time.sleep(0.1)
+
     except Exception as e:
-        print(f"[BOT ERROR] {e}")
+        print(f"[❗ BOT ERROR] {e}")
     finally:
         mt5.shutdown()
         BOT_RUNNING = False
+        print("🛑 Bot stopped and MT5 connection closed.")
 
 
 def stop_bot():
